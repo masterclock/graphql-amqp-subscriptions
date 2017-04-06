@@ -9,8 +9,8 @@ import {
   GraphQLBoolean,
 } from 'graphql';
 
-import {SubscriptionManager} from 'graphql-subscriptions';
-import {RedisPubSub} from '../redis-pubsub';
+import { SubscriptionManager } from 'graphql-subscriptions';
+import { AmqpPubSub } from '../amqp-pubsub';
 
 chai.use(chaiAsPromised);
 const expect = chai.expect;
@@ -63,47 +63,47 @@ const schema = new GraphQLSchema({
           return root;
         },
         args: {
-          repoName: {type: GraphQLString},
+          repoName: { type: GraphQLString },
         },
       },
     },
   }),
 });
 
-describe('SubscriptionManager', function() {
+describe('SubscriptionManager', function () {
   const subManager = new SubscriptionManager({
     schema,
     setupFunctions: {
       'testFilter': (options, { filterBoolean }) => {
         return {
-          'Filter1': {filter: (root) => root.filterBoolean === filterBoolean},
+          'Filter1': { filter: (root) => root.filterBoolean === filterBoolean },
         };
       },
       'testFilterMulti': (options) => {
         return {
-          'Trigger1': {filter: () => true},
-          'Trigger2': {filter: () => true},
+          'Trigger1': { filter: () => true },
+          'Trigger2': { filter: () => true },
         };
       },
     },
-    pubsub: new RedisPubSub(),
+    pubsub: new AmqpPubSub(),
   });
 
-  it('throws an error if query is not valid', function() {
+  it('throws an error if query is not valid', function () {
     const query = 'query a{ testInt }';
     const callback = () => null;
     return expect(subManager.subscribe({ query, operationName: 'a', callback }))
       .to.eventually.be.rejectedWith('Subscription query has validation errors');
   });
 
-  it('rejects subscriptions with more than one root field', function() {
+  it('rejects subscriptions with more than one root field', function () {
     const query = 'subscription X{ a: testSubscription, b: testSubscription }';
     const callback = () => null;
     return expect(subManager.subscribe({ query, operationName: 'X', callback }))
       .to.eventually.be.rejectedWith('Subscription query has validation errors');
   });
 
-  it('can subscribe with a valid query and gets a subId back', function() {
+  it('can subscribe with a valid query and gets a subId back', function () {
     const query = 'subscription X{ testSubscription }';
     const callback = () => null;
     subManager.subscribe({ query, operationName: 'X', callback }).then(subId => {
@@ -112,10 +112,11 @@ describe('SubscriptionManager', function() {
     });
   });
 
-  it('can subscribe with a valid query and get the root value', function(done) {
+  it('can subscribe with a valid query and get the root value', function (done) {
     const query = 'subscription X{ testSubscription }';
-    const callback = function(err, payload){
+    const callback = function (err, payload) {
       try {
+        console.log('payload: ', payload);
         expect(payload.data.testSubscription).to.equals('good');
       } catch (e) {
         done(e);
@@ -128,15 +129,15 @@ describe('SubscriptionManager', function() {
       subManager.publish('testSubscription', 'good');
       setTimeout(() => {
         subManager.unsubscribe(subId);
-      }, 1);
+      }, 100);
     });
   });
 
-  it('can use filter functions properly', function(done) {
+  it('can use filter functions properly', function (done) {
     const query = `subscription Filter1($filterBoolean: Boolean){
        testFilter(filterBoolean: $filterBoolean)
       }`;
-    const callback = function(err, payload){
+    const callback = function (err, payload) {
       try {
         expect(payload.data.testFilter).to.equals('goodFilter');
       } catch (e) {
@@ -148,18 +149,18 @@ describe('SubscriptionManager', function() {
     subManager.subscribe({
       query,
       operationName: 'Filter1',
-      variables: { filterBoolean: true},
+      variables: { filterBoolean: true },
       callback,
     }).then(subId => {
-      subManager.publish('Filter1', {filterBoolean: false });
-      subManager.publish('Filter1', {filterBoolean: true });
+      subManager.publish('Filter1', { filterBoolean: false });
+      subManager.publish('Filter1', { filterBoolean: true });
       setTimeout(() => {
         subManager.unsubscribe(subId);
-      }, 2);
+      }, 1000);
     });
   });
 
-  it('can subscribe to more than one trigger', function(done) {
+  it('can subscribe to more than one trigger', function (done) {
     // I also used this for testing arg parsing (with console.log)
     // args a and b can safely be removed.
     // TODO: write real tests for argument parsing
@@ -167,7 +168,7 @@ describe('SubscriptionManager', function() {
     const query = `subscription multiTrigger($filterBoolean: Boolean, $uga: String){
        testFilterMulti(filterBoolean: $filterBoolean, a: $uga, b: 66)
       }`;
-    const callback = function(err, payload){
+    const callback = function (err, payload) {
       try {
         expect(payload.data.testFilterMulti).to.equals('goodFilter');
         triggerCount++;
@@ -182,22 +183,23 @@ describe('SubscriptionManager', function() {
     subManager.subscribe({
       query,
       operationName: 'multiTrigger',
-      variables: { filterBoolean: true, uga: 'UGA'},
+      variables: { filterBoolean: true, uga: 'UGA' },
       callback,
     }).then(subId => {
-      subManager.publish('NotATrigger', {filterBoolean: false});
-      subManager.publish('Trigger1', {filterBoolean: true });
-      subManager.publish('Trigger2', {filterBoolean: true });
+      subManager.publish('NotATrigger', { filterBoolean: false });
+      subManager.publish('Trigger1', { filterBoolean: true });
+      subManager.publish('Trigger2', { filterBoolean: true });
       setTimeout(() => {
         subManager.unsubscribe(subId);
-      }, 3);
+      }, 1000);
     });
   });
 
-  it('can unsubscribe', function(done) {
+  it('can unsubscribe', function (done) {
     const query = 'subscription X{ testSubscription }';
     const callback = (err, payload) => {
       try {
+        console.log(payload);
         assert(false);
       } catch (e) {
         done(e);
@@ -208,7 +210,7 @@ describe('SubscriptionManager', function() {
     subManager.subscribe({ query, operationName: 'X', callback }).then(subId => {
       subManager.unsubscribe(subId);
       subManager.publish('testSubscription', 'bad');
-      setTimeout(done, 30);
+      setTimeout(done, 300);
     });
   });
 
@@ -217,11 +219,11 @@ describe('SubscriptionManager', function() {
       .to.throw('undefined');
   });
 
-  it('calls the error callback if there is an execution error', function(done) {
+  it('calls the error callback if there is an execution error', function (done) {
     const query = `subscription X($uga: Boolean!){
       testSubscription  @skip(if: $uga)
     }`;
-    const callback = function(err, payload){
+    const callback = function (err, payload) {
       try {
         expect(payload).to.be.undefined;
         expect(err.message).to.equals(
@@ -238,22 +240,22 @@ describe('SubscriptionManager', function() {
       subManager.publish('testSubscription', 'good');
       setTimeout(() => {
         subManager.unsubscribe(subId);
-      }, 4);
+      }, 1000);
     });
   });
 
   it('can use transform function to convert the trigger name given into more explicit channel name', function (done) {
-    const triggerTransform = (trigger, {path}) => [trigger, ...path].join('.');
-    const pubsub = new RedisPubSub({
+    const triggerTransform = (trigger, { path }) => [trigger, ...path].join('.');
+    const pubsub = new AmqpPubSub({
       triggerTransform,
     });
 
     const subManager2 = new SubscriptionManager({
       schema,
       setupFunctions: {
-        testChannelOptions: (options, {repoName}) => ({
+        testChannelOptions: (options, { repoName }) => ({
           comments: {
-            channelOptions: {path: [repoName]},
+            channelOptions: { path: [repoName] },
           },
         }),
       },
@@ -275,12 +277,12 @@ describe('SubscriptionManager', function() {
       }
     `;
 
-    const variables = {repoName: 'graphql-redis-subscriptions'};
+    const variables = { repoName: 'graphql-redis-subscriptions' };
 
-    subManager2.subscribe({query, operationName: 'X', variables, callback}).then(subId => {
+    subManager2.subscribe({ query, operationName: 'X', variables, callback }).then(subId => {
       pubsub.publish('comments.graphql-redis-subscriptions', 'test');
 
-      setTimeout(() => pubsub.unsubscribe(subId), 4);
+      setTimeout(() => pubsub.unsubscribe(subId), 1000);
     });
 
   });

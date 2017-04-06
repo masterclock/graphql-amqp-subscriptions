@@ -1,1 +1,1 @@
-export {RedisPubSub} from './redis-pubsub';
+export {AmqpPubSub} from './amqp-pubsub';

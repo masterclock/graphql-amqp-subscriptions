@@ -9,7 +9,7 @@ import {
 } from 'graphql';
 
 import {SubscriptionManager, PubSub} from 'graphql-subscriptions';
-import {RedisPubSub} from '../redis-pubsub';
+import {AmqpPubSub} from '../amqp-pubsub';
 
 const expect = chai.expect;
 
@@ -278,7 +278,7 @@ describe('Benchmark Redis PubSub', function () {
   const subManager = new SubscriptionManager({
     schema,
     setupFunctions: {},
-    pubsub: new RedisPubSub(),
+    pubsub: new AmqpPubSub(),
   });
 
   describe('multiple subscribers to channel', function () {
